@@ -28,6 +28,7 @@ class ColorCallbacks : public BLECharacteristicCallbacks {
     hex.trim();
 
     Serial.print("Raw color from BLE: ");
+    Serial.printf("%u", pCharacteristic->getHandle());
     Serial.println(hex);
 
     if (hex.length() == 0) return;
