@@ -25,9 +25,9 @@ size_t  rxCount = 0;
 
 // ========= BLE client setup =========
 
-// Change these to match your BLE *server*:
-static BLEUUID serviceUUID("beb5483e-36e1-4688-b7f5-ea07361b26a7");
-static BLEUUID charUUID   ("beb5483e-36e1-4688-b7f5-ea07361b26a8");
+
+static BLEUUID serviceUUID("beb5483e-36e1-4688-b7f5-ea07361b2600");  // POSITION_SERVICE_UUID
+static BLEUUID charUUID   ("beb5483e-36e1-4688-b7f5-ea07361b2601");  // CHAR_RADAR_UUID
 
 static boolean doConnect = false;
 static boolean connected = false;
@@ -113,18 +113,19 @@ int16_t decodeSigned15(uint16_t raw)
 
 // ========= BLE: send raw radar reading =========
 // Binary payload: [x_lo, x_hi, y_lo, y_hi, v_lo, v_hi, pixel_lo, pixel_hi]
-void sendRadarRaw(int16_t x_mm, int16_t y_mm, int16_t v_cms, uint16_t pixel_mm)
+void sendRadarRaw(int16_t x_mm, int16_t y_mm)
 {
   if (!connected || pRemoteCharacteristic == nullptr) return;
 
   uint8_t payload[4];
-  payload[0] = (uint8_t)(x_mm & 0xFF);
-  payload[1] = (uint8_t)((x_mm >> 8) & 0xFF);
-  payload[2] = (uint8_t)(y_mm & 0xFF);
-  payload[3] = (uint8_t)((y_mm >> 8) & 0xFF);
+  payload[0] = x_mm & 0xFF;
+  payload[1] = (x_mm >> 8) & 0xFF;
+  payload[2] = y_mm & 0xFF;
+  payload[3] = (y_mm >> 8) & 0xFF;
 
   pRemoteCharacteristic->writeValue(payload, sizeof(payload), false);
 }
+
 
 // ========= parsing one frame (just to raw numbers) =========
 bool parseFrame(const uint8_t *buf, size_t len)

@@ -9,13 +9,19 @@
 HT_st7735 st7735;
 
 // ===== Service & characteristic UUIDs =====
-#define SERVICE_UUID       "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define CHAR_NOTIFY_UUID   "beb5483e-36e1-4688-b7f5-ea07361b26a8"   // counter notify
-#define CHAR_COLOR_UUID    "4fafc201-1fb5-459e-8fcc-c5c9c3319101"   // hex color R/W
+#define SERVICE_UUID          "4fafc201-1fb5-459e-8fcc-c5c9c331914b"   // bestaande StairLight-service
+#define CHAR_NOTIFY_UUID      "beb5483e-36e1-4688-b7f5-ea07361b26a8"   // counter notify
+#define CHAR_COLOR_UUID       "4fafc201-1fb5-459e-8fcc-c5c9c3319101"   // hex color R/W
+
+// NEW: aparte service voor positie (radar node)
+#define POSITION_SERVICE_UUID "beb5483e-36e1-4688-b7f5-ea07361b2600"
+#define CHAR_RADAR_UUID       "beb5483e-36e1-4688-b7f5-ea07361b2601"
+
 
 BLEServer*         pServer       = nullptr;
-BLECharacteristic* pNotifyChar   = nullptr;  // counter notify
-BLECharacteristic* colorChar     = nullptr;  // hex color R/W
+BLECharacteristic* pNotifyChar   = nullptr;
+BLECharacteristic* colorChar     = nullptr;
+BLECharacteristic* radarChar     = nullptr;   
 
 volatile int  connectedDevices = 0;
 uint32_t      counterValue     = 0;
@@ -70,6 +76,38 @@ class ColorCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
+
+class RadarCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) override {
+    // Heltec BLE library: getValue() returns Arduino String
+    String value = pCharacteristic->getValue();  // binary data
+
+    int len = value.length();
+    if (len < 4) {
+      Serial.print("Radar write too short: ");
+      Serial.println(len);
+      return;
+    }
+
+    // Treat underlying buffer as raw bytes
+    const uint8_t* data = (const uint8_t*)value.c_str();
+
+    int16_t x_mm = (int16_t)(data[0] | (data[1] << 8));  // little-endian
+    int16_t y_mm = (int16_t)(data[2] | (data[3] << 8));  // little-endian
+
+    Serial.print("Radar XY from node (positionService): x=");
+    Serial.print(x_mm);
+    Serial.print(" mm, y=");
+    Serial.print(y_mm);
+    Serial.println(" mm");
+
+    // TODO: here later:
+    //  - mapToLedIndex(x_mm, y_mm)
+    //  - LED animations
+  }
+};
+
+
 // ===== Server connect/disconnect callbacks (multi-connect) =====
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) override {
@@ -94,52 +132,63 @@ void setup() {
   delay(1000);
   Serial.println("Starting BLE StairLight multi-connect...");
 
-  // ===== Init display =====
+  // Display init
   st7735.st7735_init();
   st7735.st7735_fill_screen(ST7735_BLACK);
   st7735.st7735_write_str(0, 0, "StairLight", Font_11x18, ST7735_WHITE, ST7735_BLACK);
 
-  // ===== Init BLE device =====
-  BLEDevice::init("StairLight");  // name seen on phones
+  // BLE init
+  BLEDevice::init("StairLight");
 
-  // Create BLE server
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 
-  // Create BLE service
+  // ===== Service 1: StairLight (notify + color) =====
   BLEService *pService = pServer->createService(SERVICE_UUID);
 
-  // --- Notify characteristic (counter to all clients) ---
+  // Notify characteristic
   pNotifyChar = pService->createCharacteristic(
     CHAR_NOTIFY_UUID,
     BLECharacteristic::PROPERTY_READ |
     BLECharacteristic::PROPERTY_NOTIFY
   );
-  pNotifyChar->addDescriptor(new BLE2902());  // needed for notifications
+  pNotifyChar->addDescriptor(new BLE2902());
   pNotifyChar->setValue("0");
 
-  // --- Color characteristic (hex color R/W) ---
+  // Color characteristic
   colorChar = pService->createCharacteristic(
     CHAR_COLOR_UUID,
     BLECharacteristic::PROPERTY_READ |
     BLECharacteristic::PROPERTY_WRITE
   );
   colorChar->setCallbacks(new ColorCallbacks());
-  colorChar->setValue("#000000");  // initial value
+  colorChar->setValue("#000000");
 
-  // Start the service
   pService->start();
 
-  // Start advertising
+  // ===== Service 2: positionService (radar XY) =====
+  BLEService *positionService = pServer->createService(POSITION_SERVICE_UUID);
+
+  radarChar = positionService->createCharacteristic(
+    CHAR_RADAR_UUID,
+    BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR
+  );
+  radarChar->setCallbacks(new RadarCallbacks());
+
+  positionService->start();
+
+  // ===== Advertising =====
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->addServiceUUID(POSITION_SERVICE_UUID);  // NEW: adverteer ook positionService
   pAdvertising->setScanResponse(true);
   pAdvertising->setMinPreferred(0x06);
   pAdvertising->setMaxPreferred(0x12);
   BLEDevice::startAdvertising();
 
-  Serial.println("Advertising as 'StairLight' with counter+color characteristics");
+  Serial.println("Advertising 'StairLight' with Stair service + positionService");
 }
+
 
 void loop() {
   // Notify counter to all connected, subscribed clients
