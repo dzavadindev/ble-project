@@ -1,138 +1,134 @@
 #include <Arduino.h>
-#include "BLEDevice.h"
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <BLEScan.h>
+#include <BLEClient.h>
 
-
-#define RADAR_RX_PIN 18        
-#define RADAR_TX_PIN 17        
+// ================== Radar UART (ESP32-S3 Heltec Wireless Tracker) ==================
+#define RADAR_RX_PIN 18      // RD-03D TX -> this pin (ESP RX)
+#define RADAR_TX_PIN 17      // RD-03D RX <- this pin (ESP TX)
 #define RADAR_BAUD   256000
 
 HardwareSerial Radar(1);
 
-
+// ================== RD-03D frame parsing ==================
 const uint8_t FRAME_HEADER[4] = {0xAA, 0xFF, 0x03, 0x00};
 const uint8_t FRAME_TAIL[2]   = {0x55, 0xCC};
-const size_t  FRAME_LEN       = 30;   // 4 + (3 * 8) + 2
-
-// Single-target mode command (from Ai-Thinker docs)
-uint8_t Single_Target_Detection_CMD[12] = {
-  0xFD, 0xFC, 0xFB, 0xFA,
-  0x02, 0x00, 0x80, 0x00,   // 0x80 = single-target
-  0x04, 0x03, 0x02, 0x01
-};
+const size_t  FRAME_LEN       = 30;  // 4 + (3 * 8) + 2
 
 uint8_t rxBuf[64];
 size_t  rxCount = 0;
 
-// ========= BLE client setup =========
+bool          radarConnected         = false;
+unsigned long lastRadarFrameMs       = 0;
+const unsigned long RADAR_TIMEOUT_MS = 1000; // 1s no frames => "disconnected"
 
-
-static BLEUUID serviceUUID("beb5483e-36e1-4688-b7f5-ea07361b2600");  // POSITION_SERVICE_UUID
-static BLEUUID charUUID   ("beb5483e-36e1-4688-b7f5-ea07361b2601");  // CHAR_RADAR_UUID
-
-static boolean doConnect = false;
-static boolean connected = false;
-static boolean doScan    = false;
-static BLERemoteCharacteristic *pRemoteCharacteristic = nullptr;
-static BLEAdvertisedDevice     *myDevice = nullptr;
-
-class MyClientCallback : public BLEClientCallbacks {
-  void onConnect(BLEClient *pclient) override {}
-
-  void onDisconnect(BLEClient *pclient) override {
-    connected = false;
-    Serial.println("BLE disconnected");
-  }
-};
-
-class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
-  void onResult(BLEAdvertisedDevice advertisedDevice) override {
-    Serial.print("BLE Advertised Device found: ");
-    Serial.println(advertisedDevice.toString().c_str());
-
-    if (advertisedDevice.haveServiceUUID() &&
-        advertisedDevice.isAdvertisingService(serviceUUID)) {
-
-      BLEDevice::getScan()->stop();
-      myDevice  = new BLEAdvertisedDevice(advertisedDevice);
-      doConnect = true;
-      doScan    = true;
-
-      Serial.println("Found target BLE server, stopping scan");
-    }
-  }
-};
-
-bool connectToServer() {
-  if (!myDevice) return false;
-
-  Serial.print("Forming a connection to ");
-  Serial.println(myDevice->getAddress().toString().c_str());
-
-  BLEClient *pClient = BLEDevice::createClient();
-  Serial.println(" - Created BLE client");
-
-  pClient->setClientCallbacks(new MyClientCallback());
-
-  // Connect to the BLE server (the one advertising our service)
-  pClient->connect(myDevice);
-  Serial.println(" - Connected to BLE server");
-
-  pClient->setMTU(517);  // request max MTU
-
-  BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
-  if (pRemoteService == nullptr) {
-    Serial.print("Failed to find service UUID: ");
-    Serial.println(serviceUUID.toString().c_str());
-    pClient->disconnect();
-    return false;
-  }
-  Serial.println(" - Found BLE service");
-
-  pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
-  if (pRemoteCharacteristic == nullptr) {
-    Serial.print("Failed to find characteristic UUID: ");
-    Serial.println(charUUID.toString().c_str());
-    pClient->disconnect();
-    return false;
-  }
-  Serial.println(" - Found BLE characteristic (writable)");
-
-  connected = true;
-  return true;
-}
-
-// ========= RD-03D decode helper =========
-// RD-03D uses: bit15 = sign (1 = +, 0 = −), rest = |value|
-int16_t decodeSigned15(uint16_t raw)
-{
-  bool positive = raw & 0x8000;
-  uint16_t mag  = raw & 0x7FFF;
+// RD-03D signed 15-bit pattern: bit15 = sign (1 = +, 0 = −)
+int16_t decodeSigned15(uint16_t raw) {
+  bool positive = (raw & 0x8000u) != 0;
+  uint16_t mag  = raw & 0x7FFFu;
   int16_t value = (int16_t)mag;
   return positive ? value : -value;
 }
 
-// ========= BLE: send raw radar reading =========
-// Binary payload: [x_lo, x_hi, y_lo, y_hi, v_lo, v_hi, pixel_lo, pixel_hi]
-void sendRadarRaw(int16_t x_mm, int16_t y_mm)
-{
-  if (!connected || pRemoteCharacteristic == nullptr) return;
+// ================== BLE client (connect to server) ==================
 
-  uint8_t payload[4];
-  payload[0] = x_mm & 0xFF;
-  payload[1] = (x_mm >> 8) & 0xFF;
-  payload[2] = y_mm & 0xFF;
-  payload[3] = (y_mm >> 8) & 0xFF;
+static const char *BLE_CLIENT_NAME = "RadarNodeClient";
 
-  pRemoteCharacteristic->writeValue(payload, sizeof(payload), false);
+#define POSITION_SERVICE_UUID   "beb5483e-36e1-4688-b7f5-ea07361b2600"
+#define POSITION_CHAR_UUID      "beb5483e-36e1-4688-b7f5-ea07361b2601"
+
+BLEScan                 *pScan         = nullptr;
+BLEClient               *pClient       = nullptr;
+BLERemoteCharacteristic *pRemoteChar   = nullptr;
+bool                     clientConnected = false;
+
+// ---- client callbacks to detect disconnects ----
+class MyClientCallbacks : public BLEClientCallbacks {
+  void onConnect(BLEClient* client) override {
+    Serial.println("BLE client callback: connected to server.");
+    clientConnected = true;
+  }
+
+  void onDisconnect(BLEClient* client) override {
+    Serial.println("BLE client callback: disconnected from server.");
+    clientConnected = false;
+    pClient        = nullptr;
+    pRemoteChar    = nullptr;
+  }
+};
+
+MyClientCallbacks g_clientCallbacks;
+
+// Try to connect to a server that advertises POSITION_SERVICE_UUID
+bool connectToServer() {
+  if (clientConnected) return true;
+
+  Serial.println("Scanning for BLE server...");
+
+  // Depending on your BLE library, start() returns BLEScanResults* or BLEScanResults.
+  // Your current setup uses a pointer, so we keep that:
+  BLEScanResults* results = pScan->start(3 /* seconds */, false);
+  int foundCount = results->getCount();
+
+  for (int i = 0; i < foundCount; ++i) {
+    BLEAdvertisedDevice dev = results->getDevice(i);
+
+    // Only consider devices that advertise our service UUID
+    if (!dev.haveServiceUUID()) continue;
+    if (!dev.isAdvertisingService(BLEUUID(POSITION_SERVICE_UUID))) continue;
+
+    Serial.print("Found target server: ");
+    Serial.println(dev.toString().c_str());
+
+    pClient = BLEDevice::createClient();
+    pClient->setClientCallbacks(&g_clientCallbacks);
+    Serial.println("Created BLE client, connecting...");
+
+    if (!pClient->connect(&dev)) {
+      Serial.println("Failed to connect to server.");
+      pClient = nullptr;
+      continue; // try next result
+    }
+
+    Serial.println("Connected to BLE server (no services yet).");
+
+    BLERemoteService *pService = pClient->getService(POSITION_SERVICE_UUID);
+    if (pService == nullptr) {
+      Serial.println("Failed to find remote service.");
+      pClient->disconnect();
+      pClient = nullptr;
+      continue;
+    }
+
+    pRemoteChar = pService->getCharacteristic(POSITION_CHAR_UUID);
+    if (pRemoteChar == nullptr) {
+      Serial.println("Failed to find remote characteristic.");
+      pClient->disconnect();
+      pClient = nullptr;
+      continue;
+    }
+
+    Serial.println("Found remote position characteristic.");
+
+    // We let the callback set clientConnected=true too, but we set it here as well
+    clientConnected = true;
+
+    pScan->clearResults();
+    return true;
+  }
+
+  pScan->clearResults();
+  Serial.println("No suitable BLE server found.");
+  return false;
 }
 
+// ================== Parse one radar frame & send x,y to BLE server ==================
 
-// ========= parsing one frame (just to raw numbers) =========
-bool parseFrame(const uint8_t *buf, size_t len)
-{
+bool parseFrame(const uint8_t *buf, size_t len) {
   if (len < FRAME_LEN) return false;
 
-  // header check
+  // Header check
   if (buf[0] != FRAME_HEADER[0] ||
       buf[1] != FRAME_HEADER[1] ||
       buf[2] != FRAME_HEADER[2] ||
@@ -140,10 +136,15 @@ bool parseFrame(const uint8_t *buf, size_t len)
     return false;
   }
 
-  // tail check
-  if (buf[28] != FRAME_TAIL[0] || buf[29] != FRAME_TAIL[1]) {
+  // Tail check
+  if (buf[28] != FRAME_TAIL[0] ||
+      buf[29] != FRAME_TAIL[1]) {
     return false;
   }
+
+  // Valid frame received from radar
+  radarConnected   = true;
+  lastRadarFrameMs = millis();
 
   // ---- Target 1 data (bytes 4–11) ----
   uint16_t rawX      = (uint16_t)buf[4]  | ((uint16_t)buf[5]  << 8);
@@ -151,115 +152,115 @@ bool parseFrame(const uint8_t *buf, size_t len)
   uint16_t rawSpeed  = (uint16_t)buf[8]  | ((uint16_t)buf[9]  << 8);
   uint16_t rawPixelD = (uint16_t)buf[10] | ((uint16_t)buf[11] << 8);
 
-  int16_t x_mm    = decodeSigned15(rawX);      // mm
-  int16_t y_mm    = decodeSigned15(rawY);      // mm
-  int16_t v_cms   = decodeSigned15(rawSpeed);  // cm/s
-  uint16_t dGate  = rawPixelD;                 // mm “pixel distance value”
+  int16_t x_mm   = decodeSigned15(rawX);
+  int16_t y_mm   = decodeSigned15(rawY);
+  int16_t v_cms  = decodeSigned15(rawSpeed);
+  uint16_t dGate = rawPixelD;
 
-  // If all zero → no target in this slot
+  // All zero => no target in this slot
   if (x_mm == 0 && y_mm == 0 && v_cms == 0 && dGate == 0) {
-    // You can still send "no target" if you want; for now we skip
-    Serial.println("No target");
+    // No target, nothing to send
     return true;
   }
 
-  float dist_mm   = sqrtf((float)x_mm * x_mm + (float)y_mm * y_mm);
-  float dist_cm   = dist_mm / 10.0f;
-  float angle_deg = atan2f((float)y_mm, (float)x_mm) * 180.0f / PI;
+  // Debug print
+  Serial.print("Radar target -> X: ");
+  Serial.print(x_mm);
+  Serial.print(" mm, Y: ");
+  Serial.print(y_mm);
+  Serial.print(" mm, Pixel: ");
+  Serial.print(dGate);
+  Serial.println(" mm");
 
-  Serial.print("Target 1 -> ");
-  Serial.print("X: ");      Serial.print(x_mm);     Serial.print(" mm,  ");
-  Serial.print("Y: ");      Serial.print(y_mm);     Serial.print(" mm,  ");
-  Serial.print("Dist: ");   Serial.print(dist_cm);  Serial.print(" cm,  ");
-  Serial.print("Angle: ");  Serial.print(angle_deg);Serial.print(" deg,  ");
-  Serial.print("Speed: ");  Serial.print(v_cms);    Serial.print(" cm/s,  ");
-  Serial.print("Pixel: ");  Serial.print(dGate);    Serial.println(" mm");
+  // ==== Send 4-byte payload over BLE if client is connected ====
+  if (clientConnected && pClient && pClient->isConnected() && pRemoteChar != nullptr) {
+    uint8_t payload[4];
+    payload[0] = (uint8_t)(x_mm & 0xFF);
+    payload[1] = (uint8_t)((x_mm >> 8) & 0xFF);
+    payload[2] = (uint8_t)(y_mm & 0xFF);
+    payload[3] = (uint8_t)((y_mm >> 8) & 0xFF);
 
-  // ---- send raw to BLE server ----
-  sendRadarRaw(x_mm, y_mm, v_cms, dGate);
+    pRemoteChar->writeValue(payload, sizeof(payload), false);
+    Serial.println("BLE write (4 bytes x,y).");
+  } else {
+    Serial.println("Not connected to BLE server, skipping BLE write.");
+  }
 
   return true;
 }
 
-// ========= send mode command =========
-void sendSingleTargetCmd()
-{
-  Serial.println("Setting radar to single-target mode...");
-  Radar.write(Single_Target_Detection_CMD, sizeof(Single_Target_Detection_CMD));
-  Radar.flush();
-}
+// ================== Setup / Loop ==================
 
-// ========= Arduino setup =========
-void setup()
-{
+void setup() {
   Serial.begin(115200);
-  delay(500);
+  unsigned long start = millis();
+  while (!Serial && (millis() - start < 3000)) {
+    ; // wait up to ~3s for USB serial (optional)
+  }
 
   Serial.println();
-  Serial.println("RD-03D raw → BLE client");
+  Serial.println("RD-03D -> BLE client (x,y as 4 bytes)");
 
-  // Radar UART
+  // --- Radar UART ---
   Radar.begin(RADAR_BAUD, SERIAL_8N1, RADAR_RX_PIN, RADAR_TX_PIN);
   Radar.setRxBufferSize(256);
-  delay(100);
-  sendSingleTargetCmd();
 
-  // BLE init
-  Serial.println("Starting BLE client...");
-  BLEDevice::init("RadarNode");
+  // --- BLE init as client ---
+  BLEDevice::init(BLE_CLIENT_NAME);
 
-  BLEScan *pBLEScan = BLEDevice::getScan();
-  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
-  pBLEScan->setInterval(1349);
-  pBLEScan->setWindow(449);
-  pBLEScan->setActiveScan(true);
-  pBLEScan->start(5, false);
+  pScan = BLEDevice::getScan();
+  pScan->setActiveScan(true);   // better results, slightly more power
+
+  // First connection attempt
+  connectToServer();
 }
 
-// ========= Arduino loop =========
-void loop()
-{
-  // --- BLE state machine ---
-  if (doConnect) {
-    if (connectToServer()) {
-      Serial.println("BLE: Connected to server");
-    } else {
-      Serial.println("BLE: Failed to connect to server");
+void loop() {
+  unsigned long now = millis();
+
+  // ---- Radar connection timeout check ----
+  if (radarConnected && (now - lastRadarFrameMs > RADAR_TIMEOUT_MS)) {
+    radarConnected = false;
+    Serial.println("Radar disconnected (no frames within timeout).");
+  }
+
+  // ---- Check BLE connection, reconnect if needed ----
+  if (clientConnected) {
+    if (!pClient || !pClient->isConnected()) {
+      Serial.println("BLE server disconnected (isConnected check), will rescan.");
+      clientConnected = false;
+      pClient        = nullptr;
+      pRemoteChar    = nullptr;
     }
-    doConnect = false;
+  } else {
+    // Not connected -> try to find/connect to server
+    connectToServer();
   }
 
-  if (!connected && doScan) {
-    // Restart scan after disconnect
-    BLEDevice::getScan()->start(0);
-  }
-
-  // --- Radar reading ---
+  // ---- Read from radar UART, assemble frames ----
   while (Radar.available()) {
     uint8_t b = Radar.read();
 
-    // simple resync on header first byte
+    // Simple resync on header first byte
     if (rxCount == 0 && b != FRAME_HEADER[0]) {
       continue;
     }
 
     rxBuf[rxCount++] = b;
     if (rxCount >= sizeof(rxBuf)) {
-      rxCount = 0; // overflow safety
+      rxCount = 0;  // overflow safety
       continue;
     }
 
     if (rxCount >= FRAME_LEN) {
       if (parseFrame(rxBuf, FRAME_LEN)) {
-        rxCount = 0; // good frame → reset
+        // good frame -> reset
+        rxCount = 0;
       } else {
-        // shift by one byte to search for the next header
+        // shift by one byte to search for header
         memmove(rxBuf, rxBuf + 1, rxCount - 1);
         rxCount -= 1;
       }
     }
   }
-
-  // small pause so we don't spin crazy when no data:
-  delay(5);
 }
