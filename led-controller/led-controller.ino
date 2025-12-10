@@ -10,8 +10,8 @@ HT_st7735 st7735;
 
 // ===== Service & characteristic UUIDs =====
 #define CONTROL_SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"  // CONTROL SERVICE
-#define CHAR_NOTIFY_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"      // counter notify (TEST)
 #define CHAR_COLOR_UUID "4fafc201-1fb5-459e-8fcc-c5c9c3319101"       // u16x3 hex color (rgb) R/W
+#define CHAR_BRIGHTNESS_UUID "41db7a25-59f1-405e-b349-13afcfb5c806"  // u8 brighness R/W
 
 #define POSITION_SERVICE_UUID "beb5483e-36e1-4688-b7f5-ea07361b2600"  // POSITION SERVICE
 #define CHAR_POSITION_UUID "beb5483e-36e1-4688-b7f5-ea07361b2601"     // i16 position (xy) W/N
@@ -19,7 +19,6 @@ HT_st7735 st7735;
 
 BLEServer* pServer = nullptr;
 
-BLECharacteristic* pNotifyChar = nullptr;
 BLECharacteristic* pColorChar = nullptr;
 BLECharacteristic* pBrightnessChar = nullptr;
 
@@ -46,9 +45,9 @@ class ColorCallbacks : public BLECharacteristicCallbacks {
     if (hex[0] == '#') hex.remove(0, 1);  // get rid of the leading #
 
     // read the string values as hex numbers
-    int r = strtol(hex.substring(0, 2).c_str(), nullptr, 16);
-    int g = strtol(hex.substring(2, 4).c_str(), nullptr, 16);
-    int b = strtol(hex.substring(4, 6).c_str(), nullptr, 16);
+    uint8_t r = strtol(hex.substring(0, 2).c_str(), nullptr, 16);
+    uint8_t g = strtol(hex.substring(2, 4).c_str(), nullptr, 16);
+    uint8_t b = strtol(hex.substring(4, 6).c_str(), nullptr, 16);
 
     Serial.print("Parsed RGB = ");
     Serial.print(r);
@@ -90,8 +89,9 @@ class RadarCallbacks : public BLECharacteristicCallbacks {
     // treat underlying buffer as raw bytes
     const uint8_t* data = (const uint8_t*)value.c_str();
 
-    int16_t x_mm = (int16_t)(data[0] | (data[1] << 8));  // little-endian
-    int16_t y_mm = (int16_t)(data[2] | (data[3] << 8));  // little-endian
+    // little endian
+    int16_t x_mm = (int16_t)(data[0] | (data[1] << 8));
+    int16_t y_mm = (int16_t)(data[2] | (data[3] << 8));
 
     Serial.print("Radar XY from node (pPositionService): x=");
     Serial.print(x_mm);
@@ -102,6 +102,23 @@ class RadarCallbacks : public BLECharacteristicCallbacks {
     // TODO: here later:
     //  - mapToLedIndex(x_mm, y_mm)
     //  - LED animations
+  }
+};
+
+
+// ===== Control->Brightness characteristic callbacks =====
+class BrightnessCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* pCharacteristic) override {
+    String value = pCharacteristic->getValue();
+    if (value.length() != 1) {
+      Serial.println("Data packet is bigger then expected (1 byte)");
+      return;
+    }
+
+    const uint8_t* data = (const uint8_t*)value.c_str();
+
+    Serial.print("Changed the brightness to ");
+    Serial.println(data[0]);
   }
 };
 
@@ -125,8 +142,6 @@ class ServerCallbacks : public BLEServerCallbacks {
   }
 };
 
-
-
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -146,18 +161,25 @@ void setup() {
   BLEService* pControlService = pServer->createService(CONTROL_SERVICE_UUID);
 
   // Notify characteristic
-  pNotifyChar = pControlService->createCharacteristic(
-    CHAR_NOTIFY_UUID,
-    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
-  pNotifyChar->addDescriptor(new BLE2902());
-  pNotifyChar->setValue("0");
+  // pNotifyChar = pControlService->createCharacteristic(
+  //   CHAR_NOTIFY_UUID,
+  //   BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+  // pNotifyChar->addDescriptor(new BLE2902());
+  // pNotifyChar->setValue("0");
 
   // Color characteristic
   pColorChar = pControlService->createCharacteristic(
     CHAR_COLOR_UUID,
     BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
   pColorChar->setCallbacks(new ColorCallbacks());
-  pColorChar->setValue("#000000");
+  pColorChar->setValue("0");
+
+  // Brightness characteristic
+  pBrightnessChar = pControlService->createCharacteristic(
+    CHAR_BRIGHTNESS_UUID,
+    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
+  pBrightnessChar->setCallbacks(new BrightnessCallbacks());
+  pBrightnessChar->setValue("0");
 
   pControlService->start();
 
@@ -185,22 +207,4 @@ void setup() {
 
 
 void loop() {
-  // Notify counter to all connected, subscribed clients
-  if (connectedDevices > 0) {
-    char buffer[16];
-    snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)counterValue);
-
-    pNotifyChar->setValue((uint8_t*)buffer, strlen(buffer));
-    pNotifyChar->notify();  // goes to ALL subscribed phones
-
-    Serial.print("Notified value: ");
-    Serial.print(buffer);
-    Serial.print(" to ");
-    Serial.println(connectedDevices);
-
-    counterValue++;
-    delay(500);  // don't spam too fast
-  } else {
-    delay(200);
-  }
 }
