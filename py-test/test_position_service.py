@@ -1,11 +1,10 @@
 import asyncio
 from bleak import BleakScanner, BleakClient
 
-# Must match your ESP32 StairLight server
 SERVICE_UUID = "beb5483e-36e1-4688-b7f5-ea07361b2600"  # POSITION_SERVICE_UUID
-CHAR_UUID    = "beb5483e-36e1-4688-b7f5-ea07361b2601"  # CHAR_RADAR_UUID
+CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b2601"  # CHAR_POSITION_UUID
 
-TARGET_NAME  = "StairLight"  # BLE name of your ESP32 server
+TARGET_NAME = "StairLight"
 
 
 async def find_stairlight():
@@ -20,7 +19,6 @@ async def find_stairlight():
     for d in devices:
         print(f"- name={d.name!r}  addr={d.address}")
 
-    # Prefer finding by name
     for d in devices:
         if d.name == TARGET_NAME:
             print(f"\nFound StairLight by name: {d.name} [{d.address}]")
@@ -37,7 +35,7 @@ async def main():
 
     print(f"\nConnecting to {address} ...")
     async with BleakClient(address) as client:
-        connected = client.is_connected     # <-- FIXED HERE
+        connected = client.is_connected
         print("Connected:", connected)
         if not connected:
             return
@@ -60,7 +58,8 @@ async def main():
                 int(y_mm).to_bytes(2, byteorder="little", signed=True)
             )
 
-            print(f"  -> write x={x_mm} mm, y={y_mm} mm  payload={payload.hex()}")
+            print(
+                f"  -> write x={x_mm} mm, y={y_mm} mm  payload={payload.hex()}")
             await client.write_gatt_char(CHAR_UUID, payload, response=False)
 
             await asyncio.sleep(0.5)

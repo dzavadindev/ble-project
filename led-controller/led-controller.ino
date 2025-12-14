@@ -10,12 +10,14 @@ HT_st7735 st7735;
 
 // ===== Service & characteristic UUIDs =====
 #define CONTROL_SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"  // CONTROL SERVICE
-#define CHAR_COLOR_UUID "4fafc201-1fb5-459e-8fcc-c5c9c3319101"       // u16x3 hex color (rgb) R/W
+#define CHAR_COLOR_UUID "4fafc201-1fb5-459e-8fcc-c5c9c3319101"       // u16x3 hex color (r,g,b) R/W
 #define CHAR_BRIGHTNESS_UUID "41db7a25-59f1-405e-b349-13afcfb5c806"  // u8 brighness R/W
 
 #define POSITION_SERVICE_UUID "beb5483e-36e1-4688-b7f5-ea07361b2600"  // POSITION SERVICE
-#define CHAR_POSITION_UUID "beb5483e-36e1-4688-b7f5-ea07361b2601"     // i16 position (xy) W/N
+#define CHAR_POSITION_UUID "beb5483e-36e1-4688-b7f5-ea07361b2601"     // i16 position (x,y) W/N
 
+#define STATUS_SERVICE_UUID "71e1ebf9-7833-49a0-9fb5-580a753153de"  // STATUS SERVICE
+#define CHAR_RANGE_UUID "d6d17c21-5d8c-4942-83c2-6fdbd46a2989"      // u8x2 index (start,end) R/W
 
 BLEServer* pServer = nullptr;
 
@@ -24,9 +26,10 @@ BLECharacteristic* pBrightnessChar = nullptr;
 
 BLECharacteristic* pPositionChar = nullptr;
 
+BLECharacteristic* pRangeChar = nullptr;
+
 volatile int connectedDevices = 0;
 uint32_t counterValue = 0;
-
 
 // ===== Control->Color characteristic callbacks =====
 class ColorCallbacks : public BLECharacteristicCallbacks {
@@ -37,12 +40,11 @@ class ColorCallbacks : public BLECharacteristicCallbacks {
     Serial.print("Raw color from BLE: ");
     Serial.println(hex);
 
-    if (hex.length() != 6 || hex.length() == 0) {
+    if (hex[0] == '#') hex.remove(0, 1);  // get rid of the leading #
+    if (hex.length() != 6) {
       Serial.println("Invalid color length, expected 6 hex chars");
       return;
     }
-
-    if (hex[0] == '#') hex.remove(0, 1);  // get rid of the leading #
 
     // read the string values as hex numbers
     uint8_t r = strtol(hex.substring(0, 2).c_str(), nullptr, 16);
@@ -122,7 +124,6 @@ class BrightnessCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
-
 // ===== Server connect/disconnect callbacks (multi-connect) =====
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) override {
@@ -160,13 +161,6 @@ void setup() {
   // Service 1 ================= Control service
   BLEService* pControlService = pServer->createService(CONTROL_SERVICE_UUID);
 
-  // Notify characteristic
-  // pNotifyChar = pControlService->createCharacteristic(
-  //   CHAR_NOTIFY_UUID,
-  //   BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
-  // pNotifyChar->addDescriptor(new BLE2902());
-  // pNotifyChar->setValue("0");
-
   // Color characteristic
   pColorChar = pControlService->createCharacteristic(
     CHAR_COLOR_UUID,
@@ -193,10 +187,23 @@ void setup() {
 
   pPositionService->start();
 
+
+  // Service 3 ================= Status service
+  BLEService* pStatusService = pServer->createService(STATUS_SERVICE_UUID);
+
+  pRangeChar = pStatusService->createCharacteristic(
+    CHAR_RANGE_UUID,
+    BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ);
+  pRangeChar->addDescriptor(new BLE2902());
+  pRangeChar->setValue("0");
+
+  pStatusService->start();
+
   // ===== Advertising =====
   BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(CONTROL_SERVICE_UUID);
   pAdvertising->addServiceUUID(POSITION_SERVICE_UUID);
+  pAdvertising->addServiceUUID(STATUS_SERVICE_UUID);
   pAdvertising->setScanResponse(true);
   pAdvertising->setMinPreferred(0x06);
   pAdvertising->setMaxPreferred(0x12);
@@ -205,6 +212,23 @@ void setup() {
   Serial.println("Advertising 'StairLight' with Stair service + pPositionService");
 }
 
+void sendRange(uint8_t start, uint8_t end) {
+  uint8_t payload[2];
+  payload[0] = start;
+  payload[1] = end;
+
+  pRangeChar->setValue(payload, sizeof(payload));
+  pRangeChar->notify();
+}
 
 void loop() {
+  static uint8_t currentStart = 0;
+  static uint8_t currentEnd = 10;
+  static uint32_t last = 0;
+  if (millis() - last >= 1000) {
+    last = millis();
+    sendRange(currentStart, currentEnd);
+    currentStart++;
+    currentEnd++;
+  }
 }
