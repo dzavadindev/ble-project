@@ -28,7 +28,7 @@ function ControlPanel({ characteristic, setStatus }: PanelProps) {
     }
 
     return (
-        <div className="flex flex-col bg-green-200 m-5 p-5 rounded-sm items-center">
+        <div className="flex flex-col bg-red-100 m-5 p-5 rounded-sm items-center">
             <ColorPicker
                 color={color}
                 onChange={(newColor) => setColor(newColor.hex)}

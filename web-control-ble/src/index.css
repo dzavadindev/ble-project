@@ -1,3 +1,19 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.strip {
+  position: relative;
+  width: 100%;
+  height: 24px;
+  background: #222;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.range {
+  position: absolute;
+  height: 100%;
+  background: linear-gradient(90deg, #00ff88, #00ccff);
+  transition: left 0.15s linear, width 0.15s linear;
+}

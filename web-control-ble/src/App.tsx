@@ -59,7 +59,7 @@ function App() {
 
     return (
         <>
-            <div className="flex flex-col bg-gray-200 m-5 p-5 rounded-sm">
+            <div className="flex flex-col bg-red-100 m-5 p-5 rounded-sm">
                 <h1 className="font-bold text-4xl text-center w-full">
                     StairLight BLE
                 </h1>
