@@ -26,8 +26,7 @@ function LedStrip({ size, start, end }: LedStripProps) {
 
 function StatusPanel({ characteristic, setStatus }: PanelProps) {
     const [range, setRange] = useState<[number, number]>([0, 0]);
-    const [mock_reading, setMockReading] = useState<number>(0);
-
+ 
     useEffect(() => {
         if (!characteristic) return;
         characteristic.addEventListener("characteristicvaluechanged", (event: any) => {
@@ -47,19 +46,10 @@ function StatusPanel({ characteristic, setStatus }: PanelProps) {
             <span>
                 Currectly active range: {range[0]}, {range[1]}
             </span>
-            <div>
-                <input
-                    type="range"
-                    min={10}
-                    max={245}
-                    value={mock_reading}
-                    onChange={e => setMockReading(parseInt(e.target.value))}
-                />
-            </div>
             <LedStrip
-                size={255}
-                start={mock_reading - 10}
-                end={mock_reading + 10}
+                size={150}
+                start={range[0]}
+                end={range[1]}
             />
         </div>
     );
