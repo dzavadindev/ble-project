@@ -102,21 +102,22 @@ class ColorCallbacks : public BLECharacteristicCallbacks {
 // ===== Control->Brightness characteristic callbacks =====
 class BrightnessCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pCharacteristic) override {
-    String v = pCharacteristic->getValue();
+    size_t len = pCharacteristic->getLength();
+    const uint8_t* data = pCharacteristic->getData();
 
-    if (v.length() != 1) {
+    if (!data || len != 1) {
       Serial.print("Brightness expected 1 byte, got ");
-      Serial.println(v.length());
+      Serial.println((int)len);
       return;
     }
 
-    const uint8_t* data = (const uint8_t*)v.begin();
     uint8_t br = data[0];
 
     Serial.print("Brightness = ");
     Serial.println(br);
 
     FastLED.setBrightness(br);
+  
   }
 };
 
