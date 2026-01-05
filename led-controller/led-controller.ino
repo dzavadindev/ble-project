@@ -36,6 +36,8 @@ volatile int16_t g_x_mm = 0;
 volatile int16_t g_y_mm = 0;
 volatile bool    g_hasTarget = false;
 volatile uint32_t g_lastTargetMs = 0;
+volatile bool g_newColor = false;
+volatile uint8_t g_r = 0, g_g = 0, g_b = 0;
 
 // ================= UUIDs =================
 #define CONTROL_SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
@@ -83,13 +85,14 @@ class ColorCallbacks : public BLECharacteristicCallbacks {
     Serial.print(g);
     Serial.print(",");
     Serial.println(b);
+   // store for loop()
     g_r = r; g_g = g; g_b = b;
     g_newColor = true;
     uint16_t color565 =
       ((r & 0xF8) << 8) |
       ((g & 0xFC) << 3) |
       (b >> 3);
-    
+
     st7735.st7735_fill_screen(color565);
     st7735.st7735_write_str(
       0, 0, hex.c_str(),
@@ -303,7 +306,11 @@ void loop() {
   if (hasTarget) {
     y_cm = fabsf((float)y_mm) / 10.0f;  // mm -> cm
   }
-  chaser.setColors(CRGB(g_r, g_g, g_b), CRGB::Black);
+  if (g_newColor) {
+    g_newColor = false;
+    chaser.setColors(CRGB(g_r, g_g, g_b), CRGB::Black);
+  }
+
 
   // ---- update chaser ----
   chaser.update(hasTarget, y_cm);
