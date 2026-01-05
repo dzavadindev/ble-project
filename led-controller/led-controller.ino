@@ -84,14 +84,14 @@ class ColorCallbacks : public BLECharacteristicCallbacks {
     Serial.print(g);
     Serial.print(",");
     Serial.println(b);
-    g_r = r; g_g = g; g_b = b;
-    g_newColor = true;
-
+    
+   
     uint16_t color565 =
       ((r & 0xF8) << 8) |
       ((g & 0xFC) << 3) |
       (b >> 3);
-    
+    g_newColor = true;
+    G_collor = color565:
     st7735.st7735_fill_screen(color565);
     st7735.st7735_write_str(
       0, 0, hex.c_str(),
@@ -293,10 +293,8 @@ void loop() {
     // Serial.printf("Radar XY: x=%d mm, y=%d mm, hasTarget=%d\n",
     //               x_mm, y_mm_dbg, ht_dbg ? 1 : 0);
   }
-  if (g_newColor) {
-      g_newColor = false;
-      setAllLeds(g_r, g_g, g_b);
-    }
+  chaser.setColors(CRGB(g_r, g_g, g_b), CRGB::Black);
+
   // ---- timeout -> treat as no target ----
   bool hasTarget = g_hasTarget;
   int16_t y_mm = g_y_mm;
