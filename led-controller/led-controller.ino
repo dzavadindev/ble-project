@@ -54,7 +54,8 @@ BLECharacteristic* pColorChar = nullptr;
 BLECharacteristic* pBrightnessChar = nullptr;
 BLECharacteristic* pPositionChar = nullptr;
 BLECharacteristic* pRangeChar = nullptr;
-
+volatile bool g_newColor = false;
+volatile uint8_t g_r = 0, g_g = 0, g_b = 0;
 volatile int connectedDevices = 0;
 
 // ================= Callbacks =================
@@ -83,12 +84,14 @@ class ColorCallbacks : public BLECharacteristicCallbacks {
     Serial.print(g);
     Serial.print(",");
     Serial.println(b);
+    g_r = r; g_g = g; g_b = b;
+    g_newColor = true;
 
     uint16_t color565 =
       ((r & 0xF8) << 8) |
       ((g & 0xFC) << 3) |
       (b >> 3);
-
+    
     st7735.st7735_fill_screen(color565);
     st7735.st7735_write_str(
       0, 0, hex.c_str(),
@@ -271,7 +274,10 @@ void setup() {
 
   Serial.println("Advertising 'StairLight'...");
 }
-
+void setAllLeds(uint8_t r, uint8_t g, uint8_t b) {
+  fill_solid(leds, NUM_LEDS, CRGB(r, g, b));
+  FastLED.show();
+}
 // ================= Loop =================
 void loop() {
   // ---- clean debug print (max 10x/sec) ----
@@ -287,7 +293,10 @@ void loop() {
     // Serial.printf("Radar XY: x=%d mm, y=%d mm, hasTarget=%d\n",
     //               x_mm, y_mm_dbg, ht_dbg ? 1 : 0);
   }
-
+  if (g_newColor) {
+      g_newColor = false;
+      setAllLeds(g_r, g_g, g_b);
+    }
   // ---- timeout -> treat as no target ----
   bool hasTarget = g_hasTarget;
   int16_t y_mm = g_y_mm;
