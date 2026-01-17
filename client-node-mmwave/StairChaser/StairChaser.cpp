@@ -17,7 +17,7 @@ StairChaser::StairChaser(CRGB* leds,
   _lastStepMs = millis();
   _lastSeenMs = millis();
 }
-
+// math in code was done by chat gpt  (: AS we dit the caculations first on paper it was hard to implement them in code so we used chat gpt to help us with that
 void StairChaser::begin(uint8_t brightness) {
   FastLED.setBrightness(brightness);
   reset();
@@ -287,7 +287,7 @@ void StairChaser::update(bool hasTarget, float y_cm) {
   if (_numLeds == 0) return;
 
   uint32_t now = millis();
-  // If we reacquire while finishing/fading -> resume tracking immediately
+
   if (hasTarget && (_state == FINISHING || _state == FADING)) {
     _state = TRACKING;
     _fadeStartMs = 0;
@@ -298,8 +298,8 @@ void StairChaser::update(bool hasTarget, float y_cm) {
 
     if (_state == IDLE) {
         decideDirection(y_cm);
-        _spawnMs = now;                 // <--- add this
-        _dirCandidate = _dir;           // <--- add this
+        _spawnMs = now;                 
+        _dirCandidate = _dir;           
         _dirCandidateCount = 0;
 
       // Spawn at the physical end based on initial direction
@@ -317,7 +317,7 @@ void StairChaser::update(bool hasTarget, float y_cm) {
       return;
     }
 
-    // Update direction based on trend (helps when people turn / noise)
+    // Update direction based on trend
     updateDirectionTrend(y_cm);
 
     // Convert y to track LED and apply lead offset
@@ -325,8 +325,6 @@ void StairChaser::update(bool hasTarget, float y_cm) {
     int16_t desiredTrack = applyLead(base);
 
     if (_state == ENTERING) {
-      // During entry we keep goal as boundary.
-      // Once boundary reached, we switch to tracking goal.
       if (stepTowardGoal(_maxStepsPerUpdate)) {
         _state = TRACKING;
         setGoal(desiredTrack);
@@ -390,7 +388,6 @@ void StairChaser::update(bool hasTarget, float y_cm) {
     render(t);
 
     if (t <= 0.0f) {
-      // done
       _spawnMs = 0;
       _dirCandidate = DIR_UNKNOWN;
       _dirCandidateCount = 0;

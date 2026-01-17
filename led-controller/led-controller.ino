@@ -43,11 +43,12 @@ volatile uint8_t g_r = 0, g_g = 0, g_b = 0;
 #define CONTROL_SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHAR_COLOR_UUID "4fafc201-1fb5-459e-8fcc-c5c9c3319101"
 
+// ++++ For the Web controller ++++++
 #define CHAR_BRIGHTNESS_UUID "41db7a25-59f1-405e-b349-13afcfb5c806"
-
 #define STATUS_SERVICE_UUID "71e1ebf9-7833-49a0-9fb5-580a753153de"
 #define CHAR_RANGE_UUID "d6d17c21-5d8c-4942-83c2-6fdbd46a2989"
 
+// ++++ used By the mmwave Module ++++ 
 #define POSITION_SERVICE_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a7"
 #define CHAR_POSITION_UUID    "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
@@ -62,6 +63,7 @@ volatile int connectedDevices = 0;
 // ================= Callbacks =================
 class ColorCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pCharacteristic) override {
+    // usesing string as web controller lib gives a string
     String hex = pCharacteristic->getValue().c_str();
     hex.trim();
 
@@ -79,12 +81,15 @@ class ColorCallbacks : public BLECharacteristicCallbacks {
     uint8_t g = strtol(hex.substring(2, 4).c_str(), nullptr, 16);
     uint8_t b = strtol(hex.substring(4, 6).c_str(), nullptr, 16);
     
+
+    //Debug Prints 
     Serial.print("Parsed RGB = ");
     Serial.print(r);
     Serial.print(",");
     Serial.print(g);
     Serial.print(",");
     Serial.println(b);
+
    // store for loop()
     g_r = r; g_g = g; g_b = b;
     g_newColor = true;
@@ -93,6 +98,7 @@ class ColorCallbacks : public BLECharacteristicCallbacks {
       ((g & 0xFC) << 3) |
       (b >> 3);
 
+    // set the screen so we can see what collor it is set to on-site
     st7735.st7735_fill_screen(color565);
     st7735.st7735_write_str(
       0, 0, hex.c_str(),
@@ -103,20 +109,20 @@ class ColorCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
-// ===== Control->Brightness characteristic callbacks =====
 class BrightnessCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pCharacteristic) override {
     size_t len = pCharacteristic->getLength();
     const uint8_t* data = pCharacteristic->getData();
-
+    // validation checks 
     if (!data || len != 1) {
+
       Serial.print("Brightness expected 1 byte, got ");
       Serial.println((int)len);
       return;
     }
 
     uint8_t br = data[0];
-
+    // debug prints 
     Serial.print("Brightness = ");
     Serial.println(br);
 
@@ -195,25 +201,16 @@ void setup() {
   // LED init
   FastLED.addLeds<LED_TYPE, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);
 
-  // ===== NEW CHASER CONFIG =====
+  //Chaser config 
   chaser.setPhysicalEnds(0, NUM_LEDS - 1);   // full strip path
   chaser.setTailLen(20);
   chaser.setColors(CRGB::White, CRGB::Black);
-
   chaser.setLeadOffsets(20, 10);            // +20 down, -10 up
   chaser.setSpeedLedsPerSecond(90);         // fast but no skipping
   chaser.setMaxStepsPerUpdate(4);           // prevents jumps if loop stalls
-
-  // Make this a bit bigger than your BLE timeout so brief loss doesn't immediately finish:
   chaser.setLostTimeoutMs(350);
-
-
-  chaser.setFadeOutMs(450);                 // disperse time
+  chaser.setFadeOutMs(450);                 
   chaser.setDirectionDeadbandCm(3.0f);      // ignore small jitter
-
-  // If your radar Y is inverted, uncomment:
-  // chaser.setInvertY(true);
-
   chaser.begin(80);
 
   // BLE init
@@ -221,7 +218,7 @@ void setup() {
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new ServerCallbacks());
 
-  // Service 1: Control
+
   BLEService* pControlService = pServer->createService(CONTROL_SERVICE_UUID);
 
   pColorChar = pControlService->createCharacteristic(
@@ -241,7 +238,6 @@ void setup() {
 
   pControlService->start();
 
-  // Service 2: Positioning
   BLEService* pPositionService = pServer->createService(POSITION_SERVICE_UUID);
 
   pPositionChar = pPositionService->createCharacteristic(
@@ -252,7 +248,6 @@ void setup() {
 
   pPositionService->start();
 
-  // Service 3: Status
   BLEService* pStatusService = pServer->createService(STATUS_SERVICE_UUID);
 
   pRangeChar = pStatusService->createCharacteristic(
@@ -278,7 +273,7 @@ void setup() {
 
 // ================= Loop =================
 void loop() {
-  // ---- clean debug print (max 10x/sec) ----
+  
   static uint32_t lastPrint = 0;
   if (g_newSample && millis() - lastPrint > 100) {
     lastPrint = millis();
@@ -287,7 +282,7 @@ void loop() {
     int16_t x_mm = g_x_mm;
     int16_t y_mm_dbg = g_y_mm;
     bool ht_dbg = g_hasTarget;
-
+    //debug prints
     // Serial.printf("Radar XY: x=%d mm, y=%d mm, hasTarget=%d\n",
     //               x_mm, y_mm_dbg, ht_dbg ? 1 : 0);
   }
@@ -317,7 +312,7 @@ void loop() {
 
   // ---- notify range once per second ----
   static uint32_t lastRange = 0;
-  if (millis() - lastRange > 200) {   // 5x/sec (change to 1000 if you want 1x/sec)
+  if (millis() - lastRange > 200) {  
     lastRange = millis();
 
     uint16_t a, b;
