@@ -10,7 +10,7 @@
 
 RadarSensor radar(RADAR_RX_PIN, RADAR_TX_PIN, RADAR_UART);
 
-// If you want to also notify "no target", set to 1
+// used for debuging 
 #define SEND_NO_TARGET 1
 
 // ================= BLE CLIENT =================
@@ -53,25 +53,28 @@ bool connectToServer() {
 
   Serial.print("Connecting to ");
   Serial.println(myDevice->getAddress().toString().c_str());
+  // create a new BLE client instance
+  BLEClient *pClient = BLEDevice::createClient();          
+  pClient->setClientCallbacks(new MyClientCallback()); 
+  //connect to the RGB strip controller    
+  pClient->connect(myDevice);                              
 
-  BLEClient *pClient = BLEDevice::createClient();
-  pClient->setClientCallbacks(new MyClientCallback());
-  pClient->connect(myDevice);
-
-  pClient->setMTU(517);
-
+  // After connecting, look up the service by UUID on the remote device
   BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
   if (!pRemoteService) {
-    Serial.println("Service not found");
-    pClient->disconnect();
+    Serial.println("Service not found");                   // server doesn't have our expected service
+    pClient->disconnect();                                 // cleanly disconnect
     return false;
   }
 
+  // Inside the service we get the characteristic we want to write to
   pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
   if (!pRemoteCharacteristic) {
-    Serial.println("Characteristic not found");
-    pClient->disconnect();
+    Serial.println("Characteristic not found");            // service exists, but characteristic UUID not found
+    pClient->disconnect();                                 
     return false;
+  }
+
   }
 
   connected = true;
@@ -79,7 +82,7 @@ bool connectToServer() {
   return true;
 }
 
-// Payload: [x_lo, x_hi, y_lo, y_hi] (little-endian int16)
+// Payload: [x_lo, x_hi, y_lo, y_hi] 
 void sendXY(int16_t x_mm, int16_t y_mm) {
   if (!connected || pRemoteCharacteristic == nullptr) return;
 
@@ -128,14 +131,6 @@ void loop() {
 
   RadarTarget tgt = radar.getTarget();
 
-  bool noTarget = (tgt.detected);
-  Serial.println(noTarget);
-
-  if (noTarget) {
-    sendXY(0, 0);
-  }
-
-  // Send raw mm values (assuming tgt.x/tgt.y are mm)
   sendXY((int16_t)tgt.x, (int16_t)tgt.y);
 
   // Optional debug:

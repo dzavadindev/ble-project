@@ -1,12 +1,11 @@
 #include "RadarSensor.h"
 #include <math.h>
-
+//https://www.tinytronics.nl/en/sensors/motion/ai-thinker-rd-03d-24ghz-radar-sensor-module
 RadarSensor::RadarSensor(uint8_t rxPin, uint8_t txPin, uint8_t uartNum)
   : radarSerial(uartNum),  // pick UART by number (1 or 2)
     _rxPin(rxPin),
     _txPin(txPin)
 {
-  // Optional: init target
   target.detected = false;
   target.distance = 0;
   target.angle    = 0;
@@ -90,10 +89,10 @@ bool RadarSensor::parseData(const uint8_t *buf, size_t len) {
   if (target.detected) {
     target.distance = sqrtf((float)target.x * target.x + (float)target.y * target.y);
     
-    // angle calculation (you already had this)
+    // angle calculation 
     float angleRad = atan2f((float)target.y, (float)target.x) - (PI / 2.0f);
     float angleDeg = angleRad * (180.0f / PI);
-    target.angle = -angleDeg; // align angle with x sign
+    target.angle = -angleDeg; 
   } else {
     target.distance = 0.0f;
     target.angle    = 0.0f;

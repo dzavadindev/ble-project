@@ -6,7 +6,7 @@ function ControlPanel({ characteristic, brightnessCharacteristic, setStatus }: P
   const [color, setColor] = useState<string>("FFFFFF");
   const [brightness, setBrightness] = useState<number>(80);
 
-  // optional: read initial brightness from device once connected
+  // read initial brightness from device once connected
   useEffect(() => {
     let cancelled = false;
 
@@ -17,7 +17,7 @@ function ControlPanel({ characteristic, brightnessCharacteristic, setStatus }: P
         const br = dv.getUint8(0);
         if (!cancelled) setBrightness(br);
       } catch {
-        // ignore if read isn't allowed or fails
+
       }
     }
 

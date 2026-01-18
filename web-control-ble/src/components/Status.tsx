@@ -8,6 +8,7 @@ type LedStripProps = {
 }
 
 function LedStrip({ size, start, end }: LedStripProps) {
+    // Convert LED indices -> percentages so we can draw the active range as a bar
     const rangeWidth = ((end - start) / size) * 100;
     const rangeLeft = (start / size) * 100;
 
@@ -25,14 +26,18 @@ function LedStrip({ size, start, end }: LedStripProps) {
 }
 
 function StatusPanel({ characteristic, setStatus }: PanelProps) {
+    // [start, end] LED indices received from BLE
     const [range, setRange] = useState<[number, number]>([0, 0]);
- 
+
     useEffect(() => {
         if (!characteristic) return;
+
+        // Listen for notifications/updates from the BLE characteristic
         characteristic.addEventListener("characteristicvaluechanged", (event: any) => {
             const char = event.target as BluetoothRemoteGATTCharacteristic;
-            const dv = char.value!;
+            const dv = char.value!; // DataView with the payload bytes
 
+            // Payload: byte0=start, byte1=end
             const start = dv.getUint8(0, true);
             const end = dv.getUint8(1, true);
 
@@ -47,9 +52,9 @@ function StatusPanel({ characteristic, setStatus }: PanelProps) {
                 Currectly active range: {range[0]}, {range[1]}
             </span>
             <LedStrip
-                size={150}
-                start={range[0]}
-                end={range[1]}
+                size={150}          // total LEDs on the strip
+                start={range[0]}    // active range start
+                end={range[1]}      // active range end
             />
         </div>
     );
