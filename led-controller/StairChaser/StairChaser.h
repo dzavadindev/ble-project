@@ -29,18 +29,19 @@ public:
   void setLostTimeoutMs(uint32_t ms);               // e.g. 250-400ms
   void setFadeOutMs(uint32_t ms);                   // e.g. 400-700ms
   bool getActiveRange(uint16_t& startLed, uint16_t& endLed) const;
+
   // Direction-based lead offsets (in LEDs)
   // walking DOWN (top->bottom): +leadDown
   // walking UP   (bottom->top): -leadUp
   void setLeadOffsets(int16_t leadDown, int16_t leadUp);
 
-  // If your sensor y=0 is bottom instead of top
+  // Allow for top-of-staircase or bottom-of-staircase setups
   void setInvertY(bool inv);
 
   // Direction detection sensitivity (cm)
   void setDirectionDeadbandCm(float cm);
 
-  // Main update: give hasTarget + y_cm
+  // Main update function
   void update(bool hasTarget, float y_cm);
 
 private:
@@ -89,6 +90,7 @@ private:
 
   float _lastYcm = 0.0f;
   bool  _haveLastY = false;
+
   // Direction stabilization
   Dir _dirCandidate = DIR_UNKNOWN;
   uint8_t _dirCandidateCount = 0;
@@ -99,10 +101,12 @@ private:
   uint32_t _lastSeenMs = 0;
   uint32_t _lastStepMs = 0;
   uint32_t _fadeStartMs = 0;
+
   // active range
   uint16_t _activeMin = 0;
   uint16_t _activeMax = 0;
   bool     _activeValid = false;
+
   // helpers
   uint16_t clampU16(int32_t v, uint16_t lo, uint16_t hi) const;
   int16_t  clampI16(int32_t v, int16_t lo, int16_t hi) const;

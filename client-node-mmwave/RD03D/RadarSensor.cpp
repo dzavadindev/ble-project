@@ -1,8 +1,9 @@
 #include "RadarSensor.h"
 #include <math.h>
+
 //https://www.tinytronics.nl/en/sensors/motion/ai-thinker-rd-03d-24ghz-radar-sensor-module
 RadarSensor::RadarSensor(uint8_t rxPin, uint8_t txPin, uint8_t uartNum)
-  : radarSerial(uartNum),  // pick UART by number (1 or 2)
+  : radarSerial(uartNum),
     _rxPin(rxPin),
     _txPin(txPin)
 {
@@ -15,7 +16,6 @@ RadarSensor::RadarSensor(uint8_t rxPin, uint8_t txPin, uint8_t uartNum)
 }
 
 void RadarSensor::begin(unsigned long baud) {
-  // For ESP32: specify baud, config, RX, TX
   radarSerial.begin(baud, SERIAL_8N1, _rxPin, _txPin);
 }
 

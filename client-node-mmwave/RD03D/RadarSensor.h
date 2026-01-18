@@ -15,12 +15,11 @@ typedef struct RadarTarget {
 
 class RadarSensor {
 public:
-    // uartNum = 1 → use UART1 (good default on ESP32)
     RadarSensor(uint8_t rxPin, uint8_t txPin, uint8_t uartNum = 1);
 
     void begin(unsigned long baud = 256000);
     bool update();
-    RadarTarget getTarget(); // No index, only first target
+    RadarTarget getTarget(); 
 
 private:
     HardwareSerial radarSerial;

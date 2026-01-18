@@ -21,7 +21,6 @@ CRGB leds[NUM_LEDS];
 
 const float MAX_Y_CM = 300.0f;
 
-// Pick your straight segment on the strip (inclusive)
 const uint16_t STRIP_START_LED = 22;
 const uint16_t STRIP_END_LED   = 118;
 
@@ -31,7 +30,7 @@ StairChaser chaser(leds, NUM_LEDS, MAX_Y_CM, STRIP_START_LED, STRIP_END_LED);
 // If we don’t receive a BLE update for this long -> no target
 const uint32_t TARGET_TIMEOUT_MS = 300;
 
-// Latest target data (written by BLE callback, used in loop)
+// Latest target data 
 volatile int16_t g_x_mm = 0;
 volatile int16_t g_y_mm = 0;
 volatile bool    g_hasTarget = false;
@@ -76,13 +75,14 @@ class ColorCallbacks : public BLECharacteristicCallbacks {
       Serial.println("Invalid color length, expected 6 hex chars");
       return;
     }
+
     // read the string values as hex numbers
     uint8_t r = strtol(hex.substring(0, 2).c_str(), nullptr, 16);
     uint8_t g = strtol(hex.substring(2, 4).c_str(), nullptr, 16);
     uint8_t b = strtol(hex.substring(4, 6).c_str(), nullptr, 16);
     
 
-    //Debug Prints 
+    // Debug Prints 
     Serial.print("Parsed RGB = ");
     Serial.print(r);
     Serial.print(",");
@@ -90,7 +90,7 @@ class ColorCallbacks : public BLECharacteristicCallbacks {
     Serial.print(",");
     Serial.println(b);
 
-   // store for loop()
+   // store for later
     g_r = r; g_g = g; g_b = b;
     g_newColor = true;
     uint16_t color565 =
@@ -98,7 +98,7 @@ class ColorCallbacks : public BLECharacteristicCallbacks {
       ((g & 0xFC) << 3) |
       (b >> 3);
 
-    // set the screen so we can see what collor it is set to on-site
+    // set the screen so we can see what color it is set to on-site
     st7735.st7735_fill_screen(color565);
     st7735.st7735_write_str(
       0, 0, hex.c_str(),
@@ -113,15 +113,15 @@ class BrightnessCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pCharacteristic) override {
     size_t len = pCharacteristic->getLength();
     const uint8_t* data = pCharacteristic->getData();
-    // validation checks 
-    if (!data || len != 1) {
 
+    if (!data || len != 1) {
       Serial.print("Brightness expected 1 byte, got ");
       Serial.println((int)len);
       return;
     }
 
     uint8_t br = data[0];
+
     // debug prints 
     Serial.print("Brightness = ");
     Serial.println(br);
@@ -147,7 +147,9 @@ class RadarCallbacks : public BLECharacteristicCallbacks {
       g_hasTarget = false;
       return;
     }
+
     Serial.printf("x=%d y=%d\n", (int)x_mm, (int)y_mm);
+
     // normal valid target
     g_hasTarget = !(x_mm == 0 && y_mm == 0);
     if (g_hasTarget) {
@@ -282,9 +284,6 @@ void loop() {
     int16_t x_mm = g_x_mm;
     int16_t y_mm_dbg = g_y_mm;
     bool ht_dbg = g_hasTarget;
-    //debug prints
-    // Serial.printf("Radar XY: x=%d mm, y=%d mm, hasTarget=%d\n",
-    //               x_mm, y_mm_dbg, ht_dbg ? 1 : 0);
   }
 
   // ---- timeout -> treat as no target ----
@@ -296,7 +295,7 @@ void loop() {
     hasTarget = false;
   }
 
-  // ---- convert y -> cm (ignore x for chaser) ----
+  // ---- convert y -> cm ----
   float y_cm = 0.0f;
   if (hasTarget) {
     y_cm = fabsf((float)y_mm) / 10.0f;  // mm -> cm
@@ -324,7 +323,6 @@ void loop() {
 
       sendRange((uint8_t)a, (uint8_t)b);
     } else {
-      // nothing active / fully faded
       sendRange(0, 0);
     }
   }

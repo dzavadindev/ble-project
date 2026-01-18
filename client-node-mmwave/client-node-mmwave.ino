@@ -2,16 +2,13 @@
 #include "BLEDevice.h"
 #include <RadarSensor.h>
 
-// ================= RADAR (via RadarSensor lib) =================
+// ================= RADAR =================
 #define RADAR_RX_PIN 18
 #define RADAR_TX_PIN 17
 #define RADAR_UART   1
 #define RADAR_BAUD   256000
 
 RadarSensor radar(RADAR_RX_PIN, RADAR_TX_PIN, RADAR_UART);
-
-// used for debuging 
-#define SEND_NO_TARGET 1
 
 // ================= BLE CLIENT =================
 static BLEUUID serviceUUID("beb5483e-36e1-4688-b7f5-ea07361b26a7");
@@ -54,27 +51,25 @@ bool connectToServer() {
   Serial.print("Connecting to ");
   Serial.println(myDevice->getAddress().toString().c_str());
   // create a new BLE client instance
-  BLEClient *pClient = BLEDevice::createClient();          
+  BLEClient *pClient = BLEDevice::createClient();
   pClient->setClientCallbacks(new MyClientCallback()); 
-  //connect to the RGB strip controller    
-  pClient->connect(myDevice);                              
+  // connect to the RGB strip controller
+  pClient->connect(myDevice);
 
   // After connecting, look up the service by UUID on the remote device
   BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
   if (!pRemoteService) {
-    Serial.println("Service not found");                   // server doesn't have our expected service
-    pClient->disconnect();                                 // cleanly disconnect
+    Serial.println("Service not found");
+    pClient->disconnect();
     return false;
   }
 
   // Inside the service we get the characteristic we want to write to
   pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
   if (!pRemoteCharacteristic) {
-    Serial.println("Characteristic not found");            // service exists, but characteristic UUID not found
-    pClient->disconnect();                                 
+    Serial.println("Characteristic not found");
+    pClient->disconnect();
     return false;
-  }
-
   }
 
   connected = true;
@@ -101,7 +96,6 @@ void setup() {
 
   Serial.println("RadarSensor X+Y -> BLE client");
 
-  // Start radar via your library
   radar.begin(RADAR_BAUD);
 
   // BLE init + scan
@@ -117,22 +111,20 @@ void setup() {
 
 void loop() {
   // --- BLE state machine ---
-  
   if (doConnect) {
     if (!connectToServer()) Serial.println("BLE connect failed");
     doConnect = false;
   }
+
   if (!connected && doScan) {
     BLEDevice::getScan()->start(0);
   }
 
-  // --- Radar update via library ---
   if (!radar.update()) return;
 
   RadarTarget tgt = radar.getTarget();
 
   sendXY((int16_t)tgt.x, (int16_t)tgt.y);
 
-  // Optional debug:
   Serial.printf("x=%d y=%d\n", (int)tgt.x, (int)tgt.y);
 }

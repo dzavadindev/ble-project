@@ -52,9 +52,9 @@ function StatusPanel({ characteristic, setStatus }: PanelProps) {
                 Currectly active range: {range[0]}, {range[1]}
             </span>
             <LedStrip
-                size={150}          // total LEDs on the strip
-                start={range[0]}    // active range start
-                end={range[1]}      // active range end
+                size={150}
+                start={range[0]}
+                end={range[1]}
             />
         </div>
     );

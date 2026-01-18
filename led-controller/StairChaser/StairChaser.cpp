@@ -1,5 +1,9 @@
 #include "StairChaser.h"
 
+// NOTE: Our calculations were first done on paper, but a large portion 
+// of converting those mathematical concepts to code was assisted by
+// ChatGPT
+
 StairChaser::StairChaser(CRGB* leds,
                          uint16_t numLeds,
                          float maxYcm,
@@ -142,7 +146,7 @@ int16_t StairChaser::applyLead(int16_t baseTrackLed) const {
   int32_t desired = baseTrackLed;
 
   if (_dir == DIR_DOWN) desired += _leadDown;
-  else if (_dir == DIR_UP) desired -= _leadUp; // subtract leadUp
+  else if (_dir == DIR_UP) desired -= _leadUp;
 
   // keep inside track segment
   desired = clampU16(desired, _trackMin, _trackMax);
@@ -150,8 +154,7 @@ int16_t StairChaser::applyLead(int16_t baseTrackLed) const {
 }
 
 void StairChaser::decideDirection(float y_cm) {
-  // Simple first guess: nearer to top half => going DOWN, nearer to bottom half => going UP
-  // This matches your wish: "it sees that i am coming from the top".
+  // simple first guess: nearer to top half => going DOWN, nearer to bottom half => going UP
   if (y_cm <= (_maxYcm * 0.5f)) _dir = DIR_DOWN;
   else _dir = DIR_UP;
 
@@ -161,7 +164,7 @@ void StairChaser::decideDirection(float y_cm) {
 void StairChaser::updateDirectionTrend(float y_cm) {
   uint32_t now = millis();
 
-  // Optional: lock direction briefly after target appears (prevents instant flip)
+  // lock direction briefly after target appears (prevents instant flip)
   if (_spawnMs != 0 && (now - _spawnMs) < _dirLockMs) {
     _lastYcm = y_cm;
     _haveLastY = true;
@@ -181,7 +184,7 @@ void StairChaser::updateDirectionTrend(float y_cm) {
 
   Dir cand = (dy > 0.0f) ? DIR_DOWN : DIR_UP;
 
-  // Confirm direction only after N consistent samples
+  // confirm direction only after N consistent samples
   if (cand != _dirCandidate) {
     _dirCandidate = cand;
     _dirCandidateCount = 1;
@@ -200,7 +203,7 @@ void StairChaser::setGoal(int16_t g) {
   _goal = g;
 }
 
-bool StairChaser::stepTowardGoal(uint8_t /*stepsAllowed*/) {
+bool StairChaser::stepTowardGoal() {
   if (_head == _goal) return true;
 
   int32_t diff = (int32_t)_goal - (int32_t)_head;
@@ -269,14 +272,14 @@ void StairChaser::render(float fade01) {
     float a = 1.0f - (float)i / (float)max<uint16_t>(1, _tailLen);
     a *= fade01;
 
-    if (a <= 0.0f) continue;   // <- important: don't mark anything when fully faded
+    if (a <= 0.0f) continue;
     if (a > 1.0f) a = 1.0f;
 
     CRGB c = _fg;
     c.nscale8_video((uint8_t)lroundf(a * 255.0f));
     _leds[idx] = c;
 
-    markActive((uint16_t)idx); // <- track active LEDs
+    markActive((uint16_t)idx);
   }
 
   FastLED.show();
@@ -298,8 +301,8 @@ void StairChaser::update(bool hasTarget, float y_cm) {
 
     if (_state == IDLE) {
         decideDirection(y_cm);
-        _spawnMs = now;                 // <--- add this
-        _dirCandidate = _dir;           // <--- add this
+        _spawnMs = now;
+        _dirCandidate = _dir;
         _dirCandidateCount = 0;
 
       // Spawn at the physical end based on initial direction
@@ -343,9 +346,7 @@ void StairChaser::update(bool hasTarget, float y_cm) {
     }
   }
 
-  // No target
   if (_state == IDLE) {
-    // stay idle
     return;
   }
 
