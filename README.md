@@ -30,5 +30,3 @@ Two ESP32-based Heltec boards communicate over Bluetooth Low Energy (BLE). The r
 ## Collaborators
 
 Thijs Besseling and Danill Zavadin.
-
-For more background, see [Bluetooth_Project.pdf](Bluetooth_Project.pdf).
